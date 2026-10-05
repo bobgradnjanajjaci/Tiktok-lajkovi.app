@@ -6,7 +6,7 @@ app = Flask(__name__)
 # 🔧 KONFIGURACIJA – JAP PANEL
 PANEL_URL = "https://godofpanel.com/api/v2"
 API_KEY = "c4868df4a78299b800d222cd9478ba17"
-SERVICE_ID = 5836  # TikTok Comment Likes na JAP-u
+SERVICE_ID = 8771  # TikTok Comment Likes na JAP-u
 
 HTML_TEMPLATE = """
 <!doctype html>
