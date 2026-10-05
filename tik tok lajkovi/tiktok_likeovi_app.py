@@ -1,12 +1,16 @@
+import os
+
 from flask import Flask, render_template_string, request
 import requests
 
+
 app = Flask(__name__)
 
-# 🔧 KONFIGURACIJA – JAP PANEL
+# Panel configuration
 PANEL_URL = "https://godofpanel.com/api/v2"
 API_KEY = "2fd817663aa2730e95cc78837adc81f6"
-SERVICE_ID = 8771  # TikTok Comment Likes na JAP-u
+SERVICE_ID = 8771
+
 
 HTML_TEMPLATE = """
 <!doctype html>
@@ -200,7 +204,6 @@ HTML_TEMPLATE = """
       padding: 12px;
       border: 1px solid rgba(31, 41, 55, 0.95);
     }
-
   </style>
 </head>
 <body>
@@ -209,7 +212,7 @@ HTML_TEMPLATE = """
       <div class="header">
         <div class="title">TikTok Comment Likes Sender</div>
         <div class="subtitle">
-          Service ID: <span>{{ service_id }}</span> · Panel: <span>JAP API v2</span>
+          Service ID: <span>{{ service_id }}</span> - Panel: <span>JAP API v2</span>
         </div>
       </div>
 
@@ -218,7 +221,7 @@ HTML_TEMPLATE = """
           <div class="field-box">
             <div class="pill">
               <span>INPUT</span>
-              <small>One order per line · LINK USERNAME QUANTITY</small>
+              <small>One order per line - LINK USERNAME QUANTITY</small>
             </div>
             <label for="orders">Orders</label>
             <textarea id="orders" name="orders" placeholder="Example:
@@ -226,7 +229,7 @@ https://www.tiktok.com/@user/video/6356041221485235461 username 100
 https://www.tiktok.com/@another/video/1234567890123456789 user123 250">{{ orders or '' }}</textarea>
             <div class="hint">
               Format: <strong>link username quantity</strong><br>
-              Script automatski pretvara u: <code>link|username</code> za API.
+              API dobija odvojeno: <code>link</code>, <code>username</code>, <code>quantity</code>.
             </div>
           </div>
 
@@ -236,21 +239,21 @@ https://www.tiktok.com/@another/video/1234567890123456789 user123 250">{{ orders
               <small>Service {{ service_id }}</small>
             </div>
             <div class="hint">
-              • Panel: <strong>justanotherpanel.com</strong><br>
-              • API key se čita iz koda.<br>
-              • Svaka linija → jedan order.<br>
-              • Ako je linija pogrešno upisana, biće preskočena uz poruku u logu.<br><br>
+              Panel: <strong>godofpanel.com</strong><br>
+              Svaka linija pravi jedan order.<br>
+              Ako je linija pogresno upisana, bice preskocena uz poruku u logu.<br><br>
               Primjer:
               <br><code>https://www.tiktok.com/@asdadsd/video/6356041221485235461 username 100</code>
               <br>API dobija:
-              <br><code>link = .../video/6356041221485235461|username</code>
+              <br><code>link = .../video/6356041221485235461</code>
+              <br><code>username = username</code>
               <br><code>quantity = 100</code>
             </div>
           </div>
         </div>
 
         <div class="btn-row">
-          <button type="submit" class="btn-primary">🚀 Send to panel (API)</button>
+          <button type="submit" class="btn-primary">Send to panel (API)</button>
         </div>
       </form>
 
@@ -264,33 +267,38 @@ https://www.tiktok.com/@another/video/1234567890123456789 user123 250">{{ orders
 </html>
 """
 
-def send_like_order(full_link: str, quantity: int):
+
+def send_like_order(link: str, username: str, quantity: int):
     """
-    Šalje JEDAN order na JAP za TikTok comment likes.
-    full_link -> 'video_url|username'
-    quantity  -> broj lajkova
+    Sends one order to the panel.
+    The username is sent as a separate API field, not appended to the link.
     """
+    if not API_KEY:
+        return False, "Missing JAP_API_KEY environment variable"
+
     payload = {
         "key": API_KEY,
         "action": "add",
         "service": SERVICE_ID,
-        "link": full_link,
+        "link": link,
+        "username": username,
         "quantity": quantity,
     }
 
     try:
-        r = requests.post(PANEL_URL, data=payload, timeout=20)
+        response = requests.post(PANEL_URL, data=payload, timeout=20)
         try:
-            data = r.json()
+            data = response.json()
         except Exception:
-            return False, f"HTTP {r.status_code}, body={r.text[:200]}"
+            return False, f"HTTP {response.status_code}, body={response.text[:200]}"
 
         if "order" in data:
             return True, f"order={data['order']}"
-        else:
-            return False, f"resp={data}"
-    except Exception as e:
-        return False, f"exception={e}"
+
+        return False, f"resp={data}"
+    except Exception as exc:
+        return False, f"exception={exc}"
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -300,44 +308,42 @@ def index():
 
     if request.method == "POST":
         orders = request.form.get("orders", "")
-        lines = [l.strip() for l in orders.splitlines() if l.strip()]
+        lines = [line.strip() for line in orders.splitlines() if line.strip()]
 
         sent_ok = 0
         sent_fail = 0
 
         for raw in lines:
-            # Očekujemo: link username quantity
             parts = raw.split()
             if len(parts) < 3:
                 sent_fail += 1
-                log_lines.append(f"[SKIP] Pogrešan format (treba: LINK USERNAME QUANTITY): {raw}")
+                log_lines.append(f"[SKIP] Pogresan format (treba: LINK USERNAME QUANTITY): {raw}")
                 continue
 
             link = parts[0]
-            username = parts[1]
+            username = parts[1].lstrip("@")
             qty_str = parts[2]
 
-            # quantity mora biti broj
             try:
                 quantity = int(qty_str)
                 if quantity <= 0:
                     raise ValueError("qty<=0")
             except Exception:
                 sent_fail += 1
-                log_lines.append(f"[SKIP] Nevažeća količina (mora biti broj > 0): {raw}")
+                log_lines.append(f"[SKIP] Neispravna kolicina (mora biti broj > 0): {raw}")
                 continue
 
-            full_link = f"{link}|{username}"
+            ok, msg = send_like_order(link, username, quantity)
+            order_info = f"link={link} username={username} quantity={quantity}"
 
-            ok, msg = send_like_order(full_link, quantity)
             if ok:
                 sent_ok += 1
-                log_lines.append(f"[OK] {full_link} x{quantity} -> {msg}")
+                log_lines.append(f"[OK] {order_info} -> {msg}")
             else:
                 sent_fail += 1
-                log_lines.append(f"[FAIL] {full_link} x{quantity} -> {msg}")
+                log_lines.append(f"[FAIL] {order_info} -> {msg}")
 
-        status = f"<strong>Gotovo.</strong> Uspješno: {sent_ok}, greške: {sent_fail}."
+        status = f"<strong>Gotovo.</strong> Uspjesno: {sent_ok}, greske: {sent_fail}."
 
     log = "\n".join(log_lines)
     return render_template_string(
@@ -347,6 +353,7 @@ def index():
         log=log,
         service_id=SERVICE_ID,
     )
+
 
 if __name__ == "__main__":
     app.run(debug=True)
