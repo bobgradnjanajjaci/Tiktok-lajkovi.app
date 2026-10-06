@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 # Panel configuration
 PANEL_URL = "https://godofpanel.com/api/v2"
-API_KEY = "2fd817663aa2730e95cc78837adc81f6"
+API_KEY = "7a1017d95f1f2917ae11df093ae68942"
 SERVICE_ID = 8771
 
 
